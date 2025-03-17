@@ -1,3 +1,7 @@
+# DO NOT REMOVE
+from sklearn.preprocessing import LabelEncoder
+from collections import Counter
+
 def flatten(l):
     f = []
     for m in l: 
@@ -8,7 +12,8 @@ def flatten(l):
             f.extend(m) # Otherwise, just extend the list f with the elements of m
     return f
 
-def create_signal_label_dict():
+
+def create_signal_label_dict(merged_data):
     # -------------------------------------------------------------------------------------------------
     # Signal Label Dictionary Initialization
     # -------------------------------------------------------------------------------------------------
@@ -38,10 +43,18 @@ def create_signal_label_dict():
     signal_label_dict_og['Interest_Coverage_Ratio_Label'] = ['Interest_Coverage_Ratio']
 
     # Ben
-    
-    #Jackson
+    signal_label_dict_og['Total_Shares_Repurchased_Label'] = ['Total_Shares_Repurchased']
+    # signal_label_dict_og['In_Process_R_D_Label'] = ['In_Process_R_D']
+    signal_label_dict_og['Capital_Expenditures_Label'] = ['Capital_Expenditures']
+    signal_label_dict_og['Cash_Dividends_Label'] = ['Cash_Dividends']
+    signal_label_dict_og['Deferred_Revenue_Label'] = ['Deferred_Revenue']
+
+    # Jackson
     signal_label_dict_og['Debt_Label'] = ['Debt']
     signal_label_dict_og['Debt_To_Equity_Ratio_Label'] = ['Debt_To_Equity_Ratio']
+    signal_label_dict_og['EBITDA_Label'] = ['EBITDA']
+    signal_label_dict_og['Enterprise_Value_Label'] = ['Enterprise_Value']
+    signal_label_dict_og['Enterprise_Multiple_Label'] = ['Enterprise_Multiple']
 
     # Rohan
     signal_label_dict_og['Volume_Label'] = ['Volume']
@@ -57,7 +70,8 @@ def create_signal_label_dict():
     signal_label_dict_og['Income_Taxes_Label'] = ['Income_Taxes']
     signal_label_dict_og['Acquisitions_Label'] = ['Acquisitions']
     signal_label_dict_og['Depreciation_Amortization_Label'] = ['Depreciation_Amortization']
-
+    # signal_label_dict_og["Funds_From_Operations_Label"] = ["Funds_From_Operations"]
+    
     # Ved
     signal_label_dict_og['Profit_Margin_Label'] = ['Profit_Margin']
     signal_label_dict_og['Risk_Adjusted_Return_Label'] = ['Risk_Adjusted_Return', 'Risk_Free_Rate']
@@ -73,12 +87,20 @@ def create_signal_label_dict():
     # -------------------------------------------------------------------------------------------------
     # Signals and Strategy Configuration
     # -------------------------------------------------------------------------------------------------
-    current_signals = signal_label_dict_og.keys()
-    num_signals = len(list(signal_label_dict_og.keys()))
+    if not('current_signals' in locals() or 'current_signals' in globals()):
+        current_signals = signal_label_dict_og.keys()
+        num_signals = len(list(signal_label_dict_og.keys()))
+    else:
+        current_signals = signal_label_dict.keys()
+        num_signals = len(list(signal_label_dict.keys()))
+        
+    ### Fitting original models- the 'all' column is used for creating models that use all the data (either stocks or shares)
+    stocks = sorted(merged_data['permno'].unique())
+    num_stocks = len(stocks)
     min_accounting_lag = 1
     # Info about the strategy, used for ex-post statistics and output not the actual backtest
     strategy_info = {
-        'brief descriptor': '7_or_all_stock_{0}signal_monthly'.format(num_signals), 
+        'brief descriptor': '{0}_stock_{1}signal'.format(num_stocks,num_signals), 
         'plot descriptor': 'B/H/S Strategy, Equal-Weighted',
         'universe': 'Public US equities with accounting data',
         'signals': current_signals, #, measured at most recent earnings announcement??
@@ -95,8 +117,8 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     import numpy as np
     import pandas as pd
 
-    signal_label_dict_og, _ = create_signal_label_dict()
-    general_columns_list = ['permno', 'PRC', 'date', 'datadate', 'rdq', 'Future_Close', 'Future_Price_Change', 'Gen_Label', 'RET']
+    signal_label_dict_og, _ = create_signal_label_dict(merged_df)
+    general_columns_list = ['permno', 'PRC', 'date', 'datadate', 'rdq', 'Future_Close', 'Future_Price_Change', 'Gen_Label', 'RET', 'naics']
     # Labeling for buy, hold, sell based on future price movement
     look_forward_days = small_ret
     merged_df['Future_Close'] = merged_df['PRC'].shift(-look_forward_days)
@@ -232,16 +254,21 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Net_Income_Label'] = 'buy' ### or buy_threshold_signal
     merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Net_Income_Label'] = 'sell' ### or sell_threshold_signal
 
-    # TODO: Addison fix on your own
-    # ############################
-    # # State / Province Location #
-    # ############################
-    # merged_df['State_Province'] = merged_df['state']
-   
+    ############################
+    # State / Province Location #
+    ############################
+  
+    # label encoder = label encoder
+    # merge df encoded state = label encoder (merged_df state_province)
+    
+    label_encoder = LabelEncoder()
+    merged_df['State_Province'] = label_encoder.fit_transform(merged_df['state'])
 
-    # merged_df['State_Province_Label'] = 'hold'
-    # merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'State_Province_Label'] = 'buy' ### or buy_threshold_signal
-    # merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'State_Province_Label'] = 'sell' ### or sell_threshold_signal
+    merged_df['State_Province_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'State_Province_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'State_Province_Label'] = 'sell'
+
+    merged_df['State_Province_Label_Encoded'] = label_encoder.fit_transform(merged_df['State_Province_Label'])
 
     ############################
     # Operating Activities Net CF #
@@ -277,14 +304,15 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     '''
     Antony
     '''
+
     ##############################
     # Calculate Return on Equity #
     ##############################
+    # ROE measures how efficiently a company generates profit from shareholders' equity.  
+    # It was chosen because a consistently high ROE indicates strong profitability and effective capital use.  
     merged_df['Return_On_Equity'] = merged_df['niq']/ (merged_df['teqq'])
 
-    # buy_threshold_roe = 0.15 
-    # sell_threshold_roe = 0.10
-    # Define buy and sell conditions based on return on Equity
+    # Define buy and sell conditions based on Return on Equity  
     merged_df['Return_On_Equity_Label'] = 'hold'
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Return_On_Equity_Label'] = 'buy'  
     merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Return_On_Equity_Label'] = 'sell'  
@@ -292,11 +320,11 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     ####################################
     # Calculate Return on Assets (ROA) #
     ####################################
+    # ROA shows how effectively a company turns its assets into profit.  
+    # It was chosen because a higher ROA suggests strong operational efficiency, making it a key indicator of financial health.  
     merged_df['Return_On_Assets'] = merged_df['niq']/(merged_df['atq'])
 
-    # buy_threshold_roa = 0.05 
-    # roa_threshold_roa = 0.01
-    # Define buy and sell conditions based on Return On Assets
+    # Define buy and sell conditions based on Return on Assets  
     merged_df['Return_On_Assets_Label'] = 'hold'
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Return_On_Assets_Label'] = 'buy'  
     merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Return_On_Assets_Label'] = 'sell'  
@@ -304,11 +332,11 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     ##################################
     # Calculate Operating Efficiency #
     ##################################
+    # A higher operating efficiency means a company is using its revenue more effectively to generate profit.  
+    # It was chosen because efficient companies tend to have higher margins and are better equipped to handle downturns.  
     merged_df['Operating_Efficiency'] = merged_df['oibdpy']/(merged_df['revty']+1)
 
-    # buy_threshold_op_eff = 0.20 
-    # sell_threshold_op_eff = 0.10
-    # Define buy and sell conditions based on Operating Efficiency
+    # Define buy and sell conditions based on Operating Efficiency  
     merged_df['Operating_Efficiency_Label'] = 'hold'
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Operating_Efficiency_Label'] = 'buy'  
     merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Operating_Efficiency_Label'] = 'sell'  
@@ -316,11 +344,11 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     ############################
     # Calculate Leverage Ratio #
     ############################
+    # The leverage ratio indicates financial risk by measuring how much debt a company uses relative to its assets.  
+    # It was chosen because excessive leverage increases financial risk, while lower leverage suggests stability.  
     merged_df['Leverage_Ratio'] = (merged_df['dlcchy']+merged_df['dltisy'])/(merged_df['atq'])
 
-    # buy_threshold_lev_ratio = 0.30 
-    # sell_threshold_lev_ratio = 0.60
-    # Define buy and sell conditions based on Leverage Ratio
+    # Define buy and sell conditions based on Leverage Ratio  
     merged_df['Leverage_Ratio_Label'] = 'hold'
     merged_df.loc[merged_df['Future_Price_Change'] < default_buy_threshold, 'Leverage_Ratio_Label'] = 'buy'  
     merged_df.loc[merged_df['Future_Price_Change'] > default_sell_threshold, 'Leverage_Ratio_Label'] = 'sell'  
@@ -328,18 +356,63 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     #####################################
     # Calculate Interest Coverage Ratio #
     #####################################
+    # A higher Interest Coverage Ratio means a company is in a better position to pay its debt interest.  
+    # It was chosen because companies with strong interest coverage are less likely to face liquidity issues or default.  
     merged_df['Interest_Coverage_Ratio'] = merged_df['oiadpy']/(merged_df['xintq']+1)
 
-    # buy_threshold_icr = 3
-    # sell_threshold_icr = 1.5
-    # Define buy and sell conditions based on Leverage Ratio
+    # Define buy and sell conditions based on Interest Coverage Ratio  
     merged_df['Interest_Coverage_Ratio_Label'] = 'hold'
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Interest_Coverage_Ratio_Label'] = 'buy'
     merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Interest_Coverage_Ratio_Label'] = 'sell'
 
+
     '''
     Ben
     '''
+    ######################################
+    # Calculate Total Shares Repurchased #
+    ######################################
+    merged_df['Total_Shares_Repurchased'] = merged_df['cshopq']
+    
+    merged_df['Total_Shares_Repurchased_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Total_Shares_Repurchased_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Total_Shares_Repurchased_Label'] = 'sell'
+
+    # ############################
+    # # Calculate In Process R&D #
+    # ############################
+    # merged_df['In_Process_R_D'] = merged_df['rdipq']
+    
+    # merged_df['In_Process_R_D_Label'] = 'hold'
+    # merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'In_Process_R_D_Label'] = 'buy'
+    # merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'In_Process_R_D_Label'] = 'sell'    
+    
+    ##################################
+    # Calculate Capital Expenditures #
+    ##################################
+    merged_df['Capital_Expenditures'] = merged_df['capxy']
+    
+    merged_df['Capital_Expenditures_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Capital_Expenditures_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Capital_Expenditures_Label'] = 'sell'
+    
+    ############################
+    # Calculate Cash Dividends #
+    ############################
+    merged_df['Cash_Dividends'] = merged_df['dvy']
+    
+    merged_df['Cash_Dividends_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Cash_Dividends_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Cash_Dividends_Label'] = 'sell'
+
+    ##############################
+    # Calculate Deferred Revenue #
+    ##############################
+    merged_df['Deferred_Revenue'] = merged_df['drcq']
+    
+    merged_df['Deferred_Revenue_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Deferred_Revenue_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Deferred_Revenue_Label'] = 'sell'
 
     '''
     Jackson
@@ -347,7 +420,7 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     #########################
     # Calculate Debt Signal #
     #########################
-    merged_df['Debt'] = merged_df['dlcq']
+    merged_df['Debt'] = merged_df['dlcq'] 
 
     merged_df['Debt_Label'] = 'hold'
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Debt_Label'] = 'buy'
@@ -362,6 +435,34 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Debt_To_Equity_Ratio_Label'] = 'buy'
     merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Debt_To_Equity_Ratio_Label'] = 'sell'
     
+    ####################
+    # Calculate EBITDA #
+    ####################
+    merged_df['EBITDA'] = merged_df['oibdpy'] + merged_df['dpq']
+
+    merged_df['EBITDA_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'EBITDA_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'EBITDA_Label'] = 'sell'
+
+    ##############################
+    # Calculate Enterprise Value #
+    ##############################
+    merged_df['Enterprise_Value'] = merged_df['mkvaltq'] + merged_df['dlttq'] + merged_df['dlcq'] - merged_df['chq']
+
+    merged_df['Enterprise_Value_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Enterprise_Value_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Enterprise_Value_Label'] = 'sell'
+
+    #################################
+    # Calculate Enterprise Multiple #
+    #################################
+    merged_df['Enterprise_Multiple'] = (merged_df['Enterprise_Value'])/(merged_df['EBITDA'])
+
+    merged_df['Enterprise_Multiple_Label'] = 'hold'
+    merged_df.loc[merged_df['Future_Price_Change'] > default_buy_threshold, 'Enterprise_Multiple_Label'] = 'buy'
+    merged_df.loc[merged_df['Future_Price_Change'] < default_sell_threshold, 'Enterprise_Multiple_Label'] = 'sell'
+
+
     '''
     Rohan
     '''
@@ -405,8 +506,8 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     merged_df.loc[merged_df['Future_Price_Change'] > buy_threshold_pe_ratio, 'PE_Ratio_Label'] = 'buy'
     merged_df.loc[merged_df['Future_Price_Change'] < sell_threshold_pe_ratio, 'PE_Ratio_Label'] = 'sell'
 
-    #################
-    # Calculate RSI #
+    #################s/signal_info.py
+# signal_label_dict_og, st
     #################
     rsi_period = 14  # Standard RSI period; can adjust
     delta = merged_df['PRC'].diff()  # Difference between current and previous close
@@ -584,22 +685,68 @@ def add_signals_to_df(merged_df, small_ret, big_ret, default_buy_threshold, defa
     merged_df.drop(columns = to_drop, inplace = True)
     for col in merged_df.columns:
         merged_df[col] = merged_df[col].replace([np.inf, -np.inf], np.nan)
+    print(merged_df)
     return merged_df
 
-def portfolio_types(merged_data, permnos):
-    # global portfolio_permnos_list, portfolio_keys_list
+#########################################################################################
+#################################### PORTFOLIO SETUP ####################################
+#########################################################################################
+
+# Function that spits out different portfolios to try different things out
+def portfolio_types(merged_data, permnos, signal_label_dict):
+    ##########
+    # Format #
+    ##########
+    # pn_keys = [[label1, label2, label3], [label4, label5], ...]
+    # pn_permnos = [[permno1, permno2], [permno3], ...]
+    ### Remember to add to portfolio_permnos_list and portfolio_keys_list
+
+    # TODO: Try different portfolios, first by grouping several similar keys together
+    # TODO: Try grouping permnos, first by grouping by various "sets" of industries
+
     p0_keys = [['Gen_Label']]
     p0_permnos = [sorted(merged_data.loc[:,'permno'].unique())]
     
-    p1_keys = [['Altman_ZScore_Label'], ['RE_over_TD_Label'], ['EPS_Old_Label'], ['Momentum_Label'], ['Moving_Average_Label'], ['Price_Acceleration_Label'], ['Return_On_Equity_Label'], ['Return_On_Assets_Label'], ['Operating_Efficiency_Label'], ['Leverage_Ratio_Label'], ['Interest_Coverage_Ratio_Label'], ['Volume_Label'], ['EPS_New_Label'], ['PE_Ratio_Label'], ['RSI_Label'], ['Bollinger_Bands_Label'], ['Current_Assets_Label'], ['Cash_Flow_Model_Label'], ['Income_Taxes_Label'], ['Acquisitions_Label'], ['Depreciation_Amortization_Label'], ['Profit_Margin_Label'], ['Risk_Adjusted_Return_Label'], ['Total_Invested_Capital_Label'], ['Net_Receivables_Label'], ['ROIC_Label']]
+    p1_keys_to_exclude = ['Gen_Label']
+    p1_keys = [[key] for key in signal_label_dict.keys() if key not in p1_keys_to_exclude]
     p1_permnos = [sorted(merged_data.loc[:,'permno'].unique())]
     
     p2_keys = [['Gen_Label']]
     p2_permnos = permnos
-    
-    p3_keys = [['Altman_ZScore_Label'], ['RE_over_TD_Label'], ['EPS_Old_Label'], ['Momentum_Label'], ['Moving_Average_Label'], ['Price_Acceleration_Label'], ['Return_On_Equity_Label'], ['Return_On_Assets_Label'], ['Operating_Efficiency_Label'], ['Leverage_Ratio_Label'], ['Interest_Coverage_Ratio_Label'], ['Volume_Label'], ['EPS_New_Label'], ['PE_Ratio_Label'], ['RSI_Label'], ['Bollinger_Bands_Label'], ['Current_Assets_Label'], ['Cash_Flow_Model_Label'], ['Income_Taxes_Label'], ['Acquisitions_Label'], ['Depreciation_Amortization_Label'], ['Profit_Margin_Label'], ['Risk_Adjusted_Return_Label'], ['Total_Invested_Capital_Label'], ['Net_Receivables_Label'], ['ROIC_Label']]
+
+    p3_keys_to_exclude = ['Gen_Label']
+    p3_keys = [[key] for key in signal_label_dict.keys() if key not in p3_keys_to_exclude]
     p3_permnos = permnos
+
+    permnos_by_naics = group_by_naics(merged_data)
 
     portfolio_permnos_list = [p0_permnos, p1_permnos, p2_permnos, p3_permnos]
     portfolio_keys_list = [p0_keys, p1_keys, p2_keys, p3_keys]
-    return portfolio_permnos_list, portfolio_keys_list
+    portfolio_interpretatbility_list = portfolio_interpretability_determination(portfolio_permnos_list, portfolio_keys_list)
+    return portfolio_permnos_list, portfolio_keys_list, portfolio_interpretatbility_list
+
+# This needs to be reworked if we ever start using the same signals in multiple models
+# Function that looks at our permnos and keys and see how granular they are. The more granular, the more interpretable.
+def portfolio_interpretability_determination(portfolio_permnos_list, portfolio_keys_list):
+    max_permno_len = 0
+    max_key_len = 0
+    for p_ind in range(len(portfolio_keys_list[0:4])):
+        max_permno_len = max(max_permno_len, len(flatten(portfolio_permnos_list[p_ind])))
+        max_key_len = max(max_key_len, len(flatten(portfolio_keys_list[p_ind])))
+    portfolio_interpretatbility_list = []
+    for p_ind in range(len(portfolio_permnos_list)):
+        permno_score = len(portfolio_permnos_list[p_ind])/max_permno_len
+        key_score = len(portfolio_keys_list[p_ind])/max_key_len
+        portfolio_interpretatbility_list.append(permno_score*key_score)
+    return portfolio_interpretatbility_list
+
+# The following two functions allow grouping permnos by naics
+def group_by_naics(merged_df):
+    grouped_df = merged_df.groupby('permno')['naics'].apply(most_frequent_naics).reset_index()
+    result = grouped_df.groupby('naics')['permno'].apply(list).tolist()
+    return result
+
+# This just makes sure that the most common naics for each permno is used.
+def most_frequent_naics(group):
+    counter = Counter(group)
+    return counter.most_common(1)[0][0]

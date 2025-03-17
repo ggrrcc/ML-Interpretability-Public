@@ -1,4 +1,5 @@
-## Steps
+--------------------------------------------------------------------------------------------------
+## Steps to add signals
 
 Research to find a signal. This can be something like accounting data, a ratio, whatever, as long as you can make a "story" out of it, as in reason why it would be a signal
 
